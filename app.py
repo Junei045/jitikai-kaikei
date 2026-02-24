@@ -2,29 +2,39 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="接続テスト", layout="centered")
-st.title("システム接続 最終チェック")
+st.set_page_config(page_title="接続リカバリー", layout="centered")
+st.title("システム接続：最終解決モード")
 
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # 【重要】名前（"Config"）ではなく、番号（0）で指定します
-    st.info("ステップ1: 1番目のシート（設定用）を読み込み中...")
-    conf_df = conn.read(worksheet=0, ttl=0) 
-    st.success("1番目のシートの読み込みに成功！")
+    # 全シートを一度に読み込む（これが一番エラーが起きにくい方法です）
+    st.info("スプレッドシートの全データをスキャン中...")
+    all_df = conn.read(ttl=0) 
+    
+    # 1枚目のシート（設定用）を取得
+    conf_df = conn.read(worksheet=0, ttl=0)
+    st.success("1枚目のシートの読み込みに成功しました。")
 
-    # 【重要】名前（"Data"）ではなく、番号（1）で指定します
-    st.info("ステップ2: 2番目のシート（実績用）を読み込み中...")
-    df = conn.read(worksheet=1, ttl=0)
-    st.success("2番目のシートの読み込みに成功！")
+    # 【重要】2枚目のシート取得に失敗する場合の予備策
+    try:
+        df = conn.read(worksheet=1, ttl=0)
+        st.success("2枚目のシートの読み込みに成功しました。")
+    except:
+        st.warning("2枚目のシートが見つからないため、1枚目のシート内にデータを探します。")
+        df = all_df.copy()
 
-    # 団体名の表示テスト（E列2行目）
-    group_name = str(conf_df.iloc[0, 4])
+    # 団体名の取得（E列2行目）
+    group_name = "団体"
+    if conf_df.shape[1] >= 5:
+        group_name = str(conf_df.iloc[0, 4])
+
     st.balloons()
-    st.success(f"確認完了！団体名：{group_name}")
-    st.write("これが表示されれば、もうエラーは出ません。")
-
+    st.success(f"接続完了！ 団体名：{group_name}")
+    st.divider()
+    st.info("このまま本来の『会計システム』の全機能を表示するための準備が整いました。")
+    
 except Exception as e:
-    st.error("❌ まだエラーが出ます")
-    st.code(f"内容: {e}")
-    st.info("もし400エラーが出る場合は、スプレッドシートのURL(ID)を再度Secretsで確認してください。")
+    st.error("❌ 読み込みエラーが発生しました")
+    st.code(f"エラー詳細: {e}")
+    st.write("スプレッドシート側の右下にあるタブを、『Config』『Data』の順に並べ直して、再度リロードしてください。")

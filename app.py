@@ -12,13 +12,28 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 2. 設定データと実績データの読み込み ---
 try:
-    # 設定シートから科目と予算を読み込む
+    # 設定シートから科目、予算、およびタイトルを読み込む
     conf_df = conn.read(worksheet="設定", ttl=0)
     # 実績（出納帳）を読み込む
     df = conn.read(worksheet="シート1", ttl=0)
+    
+    # --- 【追加】E列2行目（インデックスで言うと行1, 列4）から団体名を取得 ---
+    # conf_df.iloc[0, 4] は「E列の2行目」を指します（ヘッダーを除いたデータ1行目）
+    group_name = conf_df.iloc[0, 4] if conf_df.shape[1] >= 5 else "団体"
+    if pd.isna(group_name):
+        group_name = "団体"
 except Exception as e:
     st.error("スプレッドシートの読み込みに失敗しました。シート名が「設定」と「シート1」になっているか確認してください。")
     st.stop()
+
+# ブラウザのタブ名を変更
+st.set_page_config(page_title=f"{group_name} 会計システム", layout="centered")
+
+# ページ内の大見出しを変更
+st.markdown("<div id='linkto_top'></div>", unsafe_allow_html=True)
+st.title(f"{group_name} 会計管理システム")
+
+# （以下、科目リストやタブの処理はそのまま継続）
 
 # 科目リストと予算辞書の作成
 INCOME_ITEMS = conf_df["収入科目"].dropna().tolist()
@@ -160,3 +175,4 @@ with tab5:
                 conn.update(worksheet="シート1", data=df)
                 st.rerun()
     st.markdown("<br><a href='#linkto_top' style='display: block; text-align: center; background-color: #f0f2f6; padding: 10px; border-radius: 10px; text-decoration: none; color: #31333F;'>⬆️ ページトップへ戻る</a>", unsafe_allow_html=True)
+

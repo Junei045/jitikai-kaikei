@@ -9,17 +9,29 @@ st.set_page_config(page_title="会計管理システム", layout="centered")
 # --- 2. 接続とデータ読み込み ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-try:
-    # 1枚目(設定用)と2枚目(実績用)を読み込む
-    conf_df = conn.read(worksheet=0, ttl=0)
-    try:
-        df = conn.read(worksheet=1, ttl=0)
-    except:
-        # 2枚目がエラーなら1枚目をデータとして扱う（リカバリー用）
-        df = conf_df.copy()
+# --- 1. 接続とデータ読み込み ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-    # 団体名取得（E列2行目）
-    group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "団体"
+try:
+    # 1枚目のシート(Config)を読み込む
+    conf_df = conn.read(worksheet=0, ttl=0)
+    
+    # 団体名を取得（スプレッドシートの「団体名」という列、またはE列から取得）
+    if "団体名" in conf_df.columns:
+        group_name = str(conf_df["団体名"].iloc[0])
+    elif conf_df.shape[1] >= 5:
+        group_name = str(conf_df.iloc[0, 4])
+    else:
+        group_name = "会計管理システム"
+
+except Exception as e:
+    group_name = "会計管理システム" # 読み込みエラー時の予備名
+
+# --- 2. ページ設定 (ここで読み取ったgroup_nameを使います) ---
+st.set_page_config(page_title=f"{group_name}", layout="centered")
+
+# --- 3. タイトル表示 ---
+st.title(f"{group_name}")
     
     # 科目リストと予算
     INCOME_ITEMS = conf_df["収入科目"].dropna().tolist()
@@ -143,3 +155,4 @@ with tab5:
                 ws_idx = 1 if not df.equals(conf_df) else 0
                 conn.update(worksheet=ws_idx, data=df)
                 st.rerun()
+

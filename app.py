@@ -3,44 +3,40 @@ import pandas as pd
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-# --- 1. 接続設定とデータの読み込み ---
+# --- 1. ページ設定 (何よりも最初に実行する必要があるルールです) ---
+st.set_page_config(page_title="団体会計システム", layout="centered")
+
+# --- 2. 接続設定とデータの読み込み ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # 設定シートから科目、予算、およびタイトルを読み込む
+    # 設定シートと実績データを読み込む
     conf_df = conn.read(worksheet="設定", ttl=0)
-    # 実績（出納帳）を読み込む
     df = conn.read(worksheet="シート1", ttl=0)
     
-    # 【団体名の取得】E列2行目（行インデックス0, 列インデックス4）
-    # ヘッダーを除いた最初の行にデータがあることを想定
+    # 団体名の取得（E列2行目 = インデックス 0, 4）
     if conf_df.shape[1] >= 5 and not pd.isna(conf_df.iloc[0, 4]):
         group_name = str(conf_df.iloc[0, 4])
     else:
         group_name = "団体"
 except Exception as e:
-    st.error("スプレッドシートの読み込みに失敗しました。シート名が「設定」と「シート1」になっているか確認してください。")
+    st.error("スプレッドシートの読み込みに失敗しました。「設定」シートと「シート1」があるか確認してください。")
     st.stop()
 
-# --- 2. 基本設定 (ページ設定はここで1回だけ行う) ---
-st.set_page_config(page_title=f"{group_name} 会計システム", layout="centered")
-
+# 画面上のタイトル表示
 st.markdown("<div id='linkto_top'></div>", unsafe_allow_html=True)
 st.title(f"{group_name} 会計管理システム")
 
 # 科目リストと予算辞書の作成
 INCOME_ITEMS = conf_df["収入科目"].dropna().tolist()
 EXPENSE_ITEMS = conf_df["支出科目"].dropna().tolist()
-
-# 予算辞書の作成
 BUDGET_INCOME = dict(zip(conf_df["収入科目"].dropna(), conf_df["収入予算"].dropna()))
 BUDGET_EXPENSE = dict(zip(conf_df["支出科目"].dropna(), conf_df["支出予算"].dropna()))
 
-# 実績データの初期化（空の場合）
+# 実績データの初期化
 if df.empty or "日付" not in df.columns:
     df = pd.DataFrame(columns=["日付", "区分", "方法", "科目", "金額", "備考"])
 else:
-    # 金額列を確実に数値に変換
     df["金額"] = pd.to_numeric(df["金額"], errors='coerce').fillna(0)
 
 if "tmp_amount" not in st.session_state:
@@ -165,7 +161,6 @@ with tab5:
         disp_df = df.copy().sort_values("日付", ascending=False)
         for i, row in disp_df.iterrows():
             col1, col2 = st.columns([4, 1])
-            # row['日付']を確実にdatetimeに変換して表示
             d_str = pd.to_datetime(row['日付']).strftime('%m/%d')
             col1.write(f"{d_str} | {row['方法']} | {row['科目']} | {int(row['金額']):,}円")
             if col2.button("🗑", key=f"del_{i}"):

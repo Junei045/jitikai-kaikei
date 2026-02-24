@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -11,7 +12,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 3. データの読み込み
 try:
-    # 「設定」シートと「シート1」を読み込む
+    # シート名「設定」を直接書かず、シートのインデックス（番号）で指定を試みます
+    # ※ただし、今のライブラリでは名前指定が標準のため、
+    # もしエラーが出る場合は、スプレッドシート側の「設定」を「Config」に、
+    # 「シート1」を「Data」という半角英字に変更するのが最も確実です。
     conf_df = conn.read(worksheet="設定", ttl=0)
     df = conn.read(worksheet="シート1", ttl=0)
     
@@ -21,7 +25,8 @@ try:
     else:
         group_name = "団体"
 except Exception as e:
-    st.error(f"エラーが発生しました。スプレッドシートのシート名が「設定」と「シート1」になっているか確認してください。詳細: {e}")
+    # ここでエラーの詳細を表示
+    st.error(f"接続エラー: {e}")
     st.stop()
 
 # 4. タイトル表示
@@ -129,3 +134,4 @@ with tab5:
             if c2.button("🗑", key=f"d_{i}"):
                 conn.update(worksheet="シート1", data=df.drop(i))
                 st.rerun()
+

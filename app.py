@@ -11,9 +11,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 3. データの読み込み（英語のシート名を指定）
 try:
-    # 英語名に変更したシートを読み込む
-    conf_df = conn.read(worksheet="Config", ttl=0)
-    df = conn.read(worksheet="Data", ttl=0)
+    # シート名（Config）を指定せず、1番目のシート、2番目のシートを直接読み込む
+    conf_df = conn.read(ttl=0) # これで1番目のシートが読み込まれます
+    df = conn.read(worksheet=1, ttl=0) # これで2番目のシートが読み込まれます
     
     # 団体名（E列2行目）を取得。ここも念のためエラー対策
     if conf_df.shape[1] >= 5:
@@ -74,3 +74,4 @@ with tab1:
 # (※予算・月次・決算・削除のタブもすべて worksheet="Data" を使うように修正)
 # --- 以降、計算・表示処理 ---
 # （長くなるため省略しますが、上記のworksheet="Data"への変更をすべてに適用した状態です）
+

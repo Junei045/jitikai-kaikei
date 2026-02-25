@@ -6,37 +6,46 @@ from streamlit_gsheets import GSheetsConnection
 # 1. 接続
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+def clean_num(v):
+    """どんな変な値も数値に変換する魔法の関数"""
+    if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
+        return 0.0
+    try:
+        # 「円」や「,」を消して数値化
+        s = str(v).replace(',', '').replace('円', '').replace(' ', '').replace('　', '')
+        return float(s)
+    except:
+        return 0.0
+
 try:
     # シートを読み込む
-    all_df = conn.read(worksheet=0, ttl=0).astype(str) # 全て一旦文字列として読み込む
+    all_df = conn.read(worksheet=0, ttl=0)
     
     # 団体名取得
     group_name = all_df.iloc[0, 4] if all_df.shape[1] >= 5 else "会計システム"
     
-    # 設定データの抽出（文字列を数値に変換）
-    INCOME_ITEMS = all_df.iloc[:, 0].replace('nan', pd.NA).dropna().tolist()
-    EXPENSE_ITEMS = all_df.iloc[:, 1].replace('nan', pd.NA).dropna().tolist()
+    # 設定データの抽出
+    INCOME_ITEMS = all_df.iloc[:, 0].dropna().astype(str).tolist()
+    EXPENSE_ITEMS = all_df.iloc[:, 1].dropna().astype(str).tolist()
     
-    # 予算を数値に変換
-    def to_num_dict(keys, values):
-        d = {}
-        for k, v in zip(keys, values):
-            if pd.notna(k) and k != "nan":
-                try: d[k] = float(str(v).replace(',', ''))
-                except: d[k] = 0
-        return d
-    
-    BUDGET_INCOME = to_num_dict(all_df.iloc[:, 0], all_df.iloc[:, 2])
-    BUDGET_EXPENSE = to_num_dict(all_df.iloc[:, 1], all_df.iloc[:, 3])
+    # 予算を数値に変換（エラー対策を強化）
+    BUDGET_INCOME = {}
+    for k, v in zip(all_df.iloc[:, 0], all_df.iloc[:, 2]):
+        if pd.notna(k) and str(k) != "nan":
+            BUDGET_INCOME[str(k).strip()] = clean_num(v)
+            
+    BUDGET_EXPENSE = {}
+    for k, v in zip(all_df.iloc[:, 1], all_df.iloc[:, 3]):
+        if pd.notna(k) and str(k) != "nan":
+            BUDGET_EXPENSE[str(k).strip()] = clean_num(v)
 
-    # 実績データの抽出（G列〜L列：インデックス6〜11）
+    # 実績データの抽出（G列〜L列）
     if all_df.shape[1] >= 12:
         df = all_df.iloc[:, 6:12].copy()
         df.columns = ["日付", "区分", "方法", "科目", "金額", "備考"]
-        # 見出し行や空行を除去
-        df = df[(df["日付"] != "日付") & (df["日付"] != "nan")]
-        # 金額を数値に、日付をそのままの文字として保持
-        df["金額"] = pd.to_numeric(df["金額"].str.replace(',', ''), errors='coerce').fillna(0)
+        df = df[(df["日付"].astype(str) != "日付") & (df["日付"].astype(str) != "nan")]
+        df["金額"] = df["金額"].apply(clean_num)
+        df["科目"] = df["科目"].astype(str).str.strip()
     else:
         df = pd.DataFrame(columns=["日付", "区分", "方法", "科目", "金額", "備考"])
 
@@ -70,16 +79,14 @@ with tab1:
             st.rerun()
             
     with st.form("input_form", clear_on_submit=True):
-        # 重要：日付の形式を YYYY-MM-DD 文字列で固定
         date_val = st.date_input("日付", datetime.now())
         amount = st.number_input("金額（円）", min_value=0, step=1, value=st.session_state.tmp_amount)
         memo = st.text_input("備考")
         if st.form_submit_button("💾 保存する", use_container_width=True):
             if amount > 0:
-                new_row_list = [date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, str(amount), memo]
+                new_row_list = [date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
+                # A-F列を空にして結合
                 new_line = [None]*6 + new_row_list
-                
-                # 保存前に一旦元のデータ（文字列）と結合
                 updated_all = pd.concat([all_df, pd.DataFrame([new_line], columns=all_df.columns)], ignore_index=True)
                 conn.update(worksheet=0, data=updated_all)
                 st.session_state.tmp_amount = 0
@@ -88,7 +95,6 @@ with tab1:
 
 with tab2:
     st.subheader("現在の資産状況")
-    # 区分や金額が文字列になっている可能性を考慮して計算
     c_in = df[(df["区分"] == "収入") & (df["方法"] == "現金")]["金額"].sum()
     c_out = df[(df["区分"] == "支出") & (df["方法"] == "現金")]["金額"].sum()
     b_in = df[(df["区分"] == "収入") & (df["方法"] == "銀行")]["金額"].sum()
@@ -119,24 +125,20 @@ with tab2:
 with tab3:
     st.subheader("月次集計")
     if not df.empty:
-        df['年月'] = df['日付'].str[:7]
+        df['年月'] = df['日付'].astype(str).str[:7]
         month_list = sorted(df['年月'].unique(), reverse=True)
-        sel_month = st.selectbox("集計月を選択", month_list)
-        m_disp = df[df['年月'] == sel_month][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付")
-        st.table(m_disp.style.format({"金額": "{:,.0f}"}))
+        if month_list:
+            sel_month = st.selectbox("集計月を選択", month_list)
+            m_disp = df[df['年月'] == sel_month][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付")
+            st.table(m_disp.style.format({"金額": "{:,.0f}"}))
 
 with tab4:
     st.subheader("決算報告書")
     def get_rep(b_dict, cat):
         data = []
-        # 科目名が完全に一致するように空白を削除して集計
-        temp_df = df.copy()
-        temp_df["科目"] = temp_df["科目"].str.strip()
-        actual_sum = temp_df[temp_df["区分"] == cat].groupby("科目")["金額"].sum()
-        
+        actual_sum = df[df["区分"] == cat].groupby("科目")["金額"].sum()
         for k, v in b_dict.items():
-            k_clean = str(k).strip()
-            a = actual_sum.get(k_clean, 0)
+            a = actual_sum.get(str(k).strip(), 0)
             data.append({"科目": k, "予算額": int(v), "決算額": int(a), "差異": int(a-v if cat=="収入" else v-a)})
         return pd.DataFrame(data)
     
@@ -153,7 +155,6 @@ with tab5:
             col_txt, col_btn = st.columns([4, 1])
             col_txt.write(f"{row['日付']} | {row['科目']} | {int(row['金額']):,}円")
             if col_btn.button("削除", key=f"del_{i}"):
-                # 文字列化した all_df から行を削除して保存
                 new_all_df = all_df.drop(i)
                 conn.update(worksheet=0, data=new_all_df)
                 st.success("削除しました")

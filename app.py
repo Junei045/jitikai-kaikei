@@ -6,7 +6,6 @@ from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_num(v):
-    """数値を安全に変換（文字が混じっていても0にする）"""
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
         return 0
     try:
@@ -22,28 +21,40 @@ try:
     # 団体名取得
     group_name = str(all_df.iloc[0, 4]) if all_df.shape[1] >= 5 else "会計システム"
     
-    # 設定データの抽出
+    # 設定データの抽出（A列, B列の科目、C列, D列の予算）
     BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 0], all_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
     BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 1], all_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
-    # 実績データの抽出（G-L列）
-    if all_df.shape[1] >= 12:
-        df = all_df.iloc[:, 6:12].copy()
-        df.columns = ["日付", "区分", "方法", "科目", "金額", "備考"]
+    # 実績データの抽出（G-M列：インデックス6〜12）
+    if all_df.shape[1] >= 13:
+        # G(6):日付, H(7):区分, I(8):方法, J(9):収入科目, K(10):支出科目, L(11):金額, M(12):備考
+        df_raw = all_df.iloc[:, 6:13].copy()
+        df_raw.columns = ["日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考"]
         
-        # 見出し「日付」という行が混じっていたら削除
-        df = df[df["日付"].astype(str) != "日付"]
-        # 日付または金額が空の行を削除
-        df = df.dropna(subset=["日付", "金額"], how="all")
+        # 見出し行を除去
+        df_raw = df_raw[df_raw["日付"].astype(str) != "日付"]
+        df_raw = df_raw.dropna(subset=["日付"], how="all")
         
-        # 【重要】日付のズレ対策：一度日付型に変換し、エラーはNaT（欠損）にする
-        df["日付"] = pd.to_datetime(df["日付"], errors='coerce')
-        # 日付に変換できなかった行（変な文字など）を捨てる
-        df = df.dropna(subset=["日付"])
+        # 日付の正規化
+        df_raw["日付"] = pd.to_datetime(df_raw["日付"], errors='coerce')
+        df_raw = df_raw.dropna(subset=["日付"])
         
-        # 金額を数値化
+        # 【新機能】J列（収入科目）とK列（支出科目）を合算して「科目」列を作る
+        # 両方空なら "未分類"、入力がある方を採用する
+        def merge_subjects(row):
+            s_inc = str(row["収入科目"]).strip()
+            s_exp = str(row["支出科目"]).strip()
+            if s_inc != "" and s_inc != "nan" and s_inc != "None":
+                return s_inc
+            if s_exp != "" and s_exp != "nan" and s_exp != "None":
+                return s_exp
+            return "未分類"
+
+        df_raw["科目"] = df_raw.apply(merge_subjects, axis=1)
+        
+        # 必要な列だけを整理して抽出
+        df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
-        df["科目"] = df["科目"].astype(str).str.strip()
     else:
         df = pd.DataFrame(columns=["日付", "区分", "方法", "科目", "金額", "備考"])
 
@@ -54,7 +65,7 @@ except Exception as e:
 # ページ設定
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(f"📊 {group_name}")
-st.caption("※データ入力・修正はスプレッドシートで行ってください。")
+st.caption("※データ入力はスプレッドシートのG〜M列（J:収入科目, K:支出科目）で行ってください。")
 
 # タブ表示
 tab1, tab2, tab3 = st.tabs(["📊 予算・残高", "📅 月次集計", "📄 決算報告書"])
@@ -92,20 +103,16 @@ with tab1:
 with tab2:
     st.subheader("月次集計")
     if not df.empty:
-        # 年月でフィルタリング
         df['年月'] = df['日付'].dt.strftime('%Y-%m')
         m_list = sorted(df['年月'].unique(), reverse=True)
         if m_list:
             sel_m = st.selectbox("集計月を選択", m_list)
             m_disp = df[df['年月'] == sel_m][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付").copy()
-            # 表示用に日付を整形
             m_disp["日付"] = m_disp["日付"].dt.strftime('%Y-%m-%d')
-            # 行番号を1から振る
             m_disp.index = range(1, len(m_disp) + 1)
-            # 安全にカンマ表示（数値列のみ指定）
             st.table(m_disp.style.format({"金額": "{:,}"}))
         else:
-            st.info("集計可能なデータがありません。")
+            st.info("データがありません。")
 
 with tab3:
     st.subheader("決算報告書")
@@ -121,9 +128,6 @@ with tab3:
         return res_df
 
     st.write("#### 【収入の部】")
-    rep_inc = get_rep(BUDGET_INCOME, "収入")
-    st.table(rep_inc.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
-    
+    st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
     st.write("#### 【支出の部】")
-    rep_exp = get_rep(BUDGET_EXPENSE, "支出")
-    st.table(rep_exp.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+    st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))

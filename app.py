@@ -158,6 +158,16 @@ with tab4:
         st.table(res_exp.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
 
 with tab5:
-    st.subheader("削除")
-    st.info("※削除はスプレッドシートから直接行ってください。")
+    st.subheader("データの取り消し")
+    if not df.empty:
+        for i in reversed(df.index):
+            row = df.loc[i]
+            col_txt, col_btn = st.columns([4, 1])
+            col_txt.write(f"{row['日付']} | {row['科目']} | {int(row['金額']):,}円")
+            if col_btn.button("削除", key=f"del_{i}"):
+                new_all_df = all_df.drop(i)
+                conn.update(worksheet=0, data=new_all_df)
+                st.success("削除しました")
+                st.rerun()
+
 

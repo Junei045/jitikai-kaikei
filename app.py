@@ -7,7 +7,6 @@ from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_num(v):
-    """数値を安全に変換"""
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
         return 0.0
     try:
@@ -17,25 +16,21 @@ def clean_num(v):
         return 0.0
 
 try:
-    # シートを読み込む
+    # データの読み込み
     all_df = conn.read(worksheet=0, ttl=0)
     
-    # 団体名取得
     group_name = str(all_df.iloc[0, 4]) if all_df.shape[1] >= 5 else "会計システム"
     
-    # 設定データの抽出
     INCOME_ITEMS = all_df.iloc[:, 0].dropna().astype(str).tolist()
     EXPENSE_ITEMS = all_df.iloc[:, 1].dropna().astype(str).tolist()
     
-    # 予算を数値に変換
     BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 0], all_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
     BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 1], all_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
-    # 実績データの抽出（G列〜L列：インデックス6〜11）
+    # 実績データの抽出（G-L列）
     if all_df.shape[1] >= 12:
         df = all_df.iloc[:, 6:12].copy()
         df.columns = ["日付", "区分", "方法", "科目", "金額", "備考"]
-        # 見出しと空行を除外
         df = df[df["日付"].astype(str) != "日付"]
         df = df.dropna(subset=["日付", "金額"], how="all")
         df["金額"] = df["金額"].apply(clean_num)
@@ -44,17 +39,16 @@ try:
         df = pd.DataFrame(columns=["日付", "区分", "方法", "科目", "金額", "備考"])
 
 except Exception as e:
-    st.error(f"データ読み込みエラー: {e}")
+    st.error(f"読み込みエラー: {e}")
     st.stop()
 
-# 2. ページ設定
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(group_name)
 
 if "tmp_amount" not in st.session_state:
     st.session_state.tmp_amount = 0
 
-# --- 3. タブ表示 ---
+# タブ表示
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 入力", "📊 予算・残高", "📅 月次集計", "📄 決算報告書", "🗑 削除"])
 
 with tab1:
@@ -76,17 +70,29 @@ with tab1:
         date_val = st.date_input("日付", datetime.now())
         amount = st.number_input("金額（円）", min_value=0, step=1, value=st.session_state.tmp_amount)
         memo = st.text_input("備考")
+        
         if st.form_submit_button("💾 保存する", use_container_width=True):
             if amount > 0:
-                # 1行だけデータを作って追加保存（エラー回避策）
-                new_row = [None]*6 + [date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
-                # worksheet=0 の最後尾に追加
-                conn.create(worksheet=0, data=[new_row])
+                # 【修正：保存方法をupdateに変更し、全体を上書きするように戻す】
+                # 実績データ1行を作成
+                new_row = [None, None, None, None, None, None, 
+                           date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
                 
-                st.session_state.tmp_amount = 0
-                st.success("保存しました！")
-                st.rerun()
+                # 新しいデータフレームを作成して結合
+                new_df = pd.DataFrame([new_row], columns=all_df.columns)
+                updated_all = pd.concat([all_df, new_df], ignore_index=True)
+                
+                # 400エラーやUnsupportedを回避するため、完全に新しいデータとして更新
+                try:
+                    conn.update(worksheet=0, data=updated_all)
+                    st.success("保存に成功しました！")
+                    st.session_state.tmp_amount = 0
+                    st.rerun()
+                except Exception as save_error:
+                    st.error(f"保存エラーが発生しました: {save_error}")
+                    st.info("スプレッドシートの『共有』が『編集者』になっているか、再度確認してください。")
 
+# --- 2枚目以降の集計処理 ---
 with tab2:
     st.subheader("現在の資産状況")
     c_in = df[(df["区分"] == "収入") & (df["方法"] == "現金")]["金額"].sum()
@@ -97,9 +103,8 @@ with tab2:
     m1.metric("現金残高", f"{int(c_in - c_out):,}円")
     m2.metric("銀行残高", f"{int(b_in - b_out):,}円")
     m3.metric("総資産", f"{int((c_in + b_in) - (c_out + b_out)):,}円")
-    
     st.divider()
-    st.subheader("予算進捗")
+    # 予算進捗
     col_i, col_e = st.columns(2)
     with col_i:
         st.write("【収入】")
@@ -120,11 +125,10 @@ with tab3:
     st.subheader("月次集計")
     if not df.empty:
         df['年月'] = df['日付'].astype(str).str[:7]
-        month_list = sorted(df['年月'].unique(), reverse=True)
-        if month_list:
-            sel_month = st.selectbox("集計月を選択", month_list)
-            m_disp = df[df['年月'] == sel_month][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付")
-            st.table(m_disp.style.format({"金額": "{:,.0f}"}))
+        m_list = sorted(df['年月'].unique(), reverse=True)
+        sel_m = st.selectbox("集計月を選択", m_list)
+        m_disp = df[df['年月'] == sel_m][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付")
+        st.table(m_disp.style.format({"金額": "{:,.0f}"}))
 
 with tab4:
     st.subheader("決算報告書")
@@ -135,12 +139,9 @@ with tab4:
             a = actual_sum.get(str(k).strip(), 0)
             data.append({"科目": k, "予算額": int(v), "決算額": int(a), "差異": int(a-v if cat=="収入" else v-a)})
         return pd.DataFrame(data)
-    
-    st.write("### 【収入の部】")
-    st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
-    st.write("### 【支出の部】")
-    st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+    st.table(get_rep(BUDGET_INCOME, "収入").style.format("{:,}"))
+    st.table(get_rep(BUDGET_EXPENSE, "支出").style.format("{:,}"))
 
 with tab5:
-    st.subheader("データの取り消し")
-    st.info("※データの削除はスプレッドシートから直接行ってください。")
+    st.subheader("削除")
+    st.info("※削除はスプレッドシートから直接行ってください。")

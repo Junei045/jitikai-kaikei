@@ -137,11 +137,27 @@ with tab4:
         actual_sum = df[df["区分"] == cat].groupby("科目")["金額"].sum()
         for k, v in b_dict.items():
             a = actual_sum.get(str(k).strip(), 0)
-            data.append({"科目": k, "予算額": int(v), "決算額": int(a), "差異": int(a-v if cat=="収入" else v-a)})
+            # 予算・決算・差異をすべて整数(int)に変換してから入れる
+            data.append({
+                "科目": k, 
+                "予算額": int(v), 
+                "決算額": int(a), 
+                "差異": int(a-v if cat=="収入" else v-a)
+            })
         return pd.DataFrame(data)
-    st.table(get_rep(BUDGET_INCOME, "収入").style.format("{:,}"))
-    st.table(get_rep(BUDGET_EXPENSE, "支出").style.format("{:,}"))
+    
+    # style.format("{:,}") を style.format("{:,.0f}") または数値列指定に変更
+    st.write("### 【収入の部】")
+    res_inc = get_rep(BUDGET_INCOME, "収入")
+    if not res_inc.empty:
+        st.table(res_inc.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+    
+    st.write("### 【支出の部】")
+    res_exp = get_rep(BUDGET_EXPENSE, "支出")
+    if not res_exp.empty:
+        st.table(res_exp.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
 
 with tab5:
     st.subheader("削除")
     st.info("※削除はスプレッドシートから直接行ってください。")
+

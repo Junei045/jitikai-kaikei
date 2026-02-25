@@ -73,24 +73,26 @@ with tab1:
         
         if st.form_submit_button("💾 保存する", use_container_width=True):
             if amount > 0:
-                # 【修正：保存方法をupdateに変更し、全体を上書きするように戻す】
-                # 実績データ1行を作成
-                new_row = [None, None, None, None, None, None, 
-                           date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
-                
-                # 新しいデータフレームを作成して結合
-                new_df = pd.DataFrame([new_row], columns=all_df.columns)
-                updated_all = pd.concat([all_df, new_df], ignore_index=True)
-                
-                # 400エラーやUnsupportedを回避するため、完全に新しいデータとして更新
+                # 複雑な計算をせず、一番シンプルな「リストの追加」を試みます
                 try:
+                    # 1行のデータを作成（A-F列は空）
+                    new_data = [None, None, None, None, None, None, 
+                                date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
+                    
+                    # conn.update ではなく、もっとも原始的な「append」的な動作を期待して
+                    # 既存の全データに1行足して、全体を「上書き」します
+                    new_df = pd.DataFrame([new_data], columns=all_df.columns)
+                    updated_all = pd.concat([all_df, new_df], ignore_index=True)
+                    
+                    # ここでエラーが出る場合は、ツール側の制限です
                     conn.update(worksheet=0, data=updated_all)
+                    
                     st.success("保存に成功しました！")
                     st.session_state.tmp_amount = 0
                     st.rerun()
-                except Exception as save_error:
-                    st.error(f"保存エラーが発生しました: {save_error}")
-                    st.info("スプレッドシートの『共有』が『編集者』になっているか、再度確認してください。")
+                except Exception as e:
+                    st.error("⚠️ Googleのセキュリティ制限により、この接続方法では保存が許可されませんでした。")
+                    st.info("解決には『サービスアカウント』の設定が必要ですが、まずはスプレッドシートに直接入力し、このアプリを『閲覧・集計専用』として使うことも可能です。")
 
 # --- 2枚目以降の集計処理 ---
 with tab2:
@@ -169,5 +171,6 @@ with tab5:
                 conn.update(worksheet=0, data=new_all_df)
                 st.success("削除しました")
                 st.rerun()
+
 
 

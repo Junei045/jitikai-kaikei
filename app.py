@@ -3,23 +3,23 @@ import pandas as pd
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-# 1. 接続と読み込み
+# 1. 接続
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # 名前ではなく、左から1番目(0)、2番目(1)のシートを読み込む
+    # 名前ではなく「番号（0と1）」でシートを読み込む（最もエラーが起きにくい方法）
     conf_df = conn.read(worksheet=0, ttl=0)
     df = conn.read(worksheet=1, ttl=0)
 
-    # 団体名の取得
-    if "団体名" in conf_df.columns:
-        group_name = str(conf_df["団体名"].iloc[0])
+    # 団体名の取得（E列2行目）
+    if conf_df.shape[1] >= 5:
+        group_name = str(conf_df.iloc[0, 4])
     else:
         group_name = "自治会会計システム"
 
 except Exception as e:
     st.error(f"読み込みエラー: {e}")
-    st.info("スプレッドシートのタブ名が『Config』と『Data』になっているか確認してください。")
+    st.info("スプレッドシートの左から1番目に『設定用』、2番目に『実績用』のシートを並べてください。")
     st.stop()
 
 # 2. ページ設定
@@ -28,12 +28,12 @@ st.title(group_name)
 
 # 3. 予算・科目のリスト作成
 try:
-    INCOME_ITEMS = conf_df["収入科目"].dropna().tolist()
-    EXPENSE_ITEMS = conf_df["支出科目"].dropna().tolist()
-    BUDGET_INCOME = dict(zip(conf_df["収入科目"].dropna(), conf_df["収入予算"].dropna()))
-    BUDGET_EXPENSE = dict(zip(conf_df["支出科目"].dropna(), conf_df["支出予算"].dropna()))
+    INCOME_ITEMS = conf_df.iloc[:, 0].dropna().tolist() # A列
+    EXPENSE_ITEMS = conf_df.iloc[:, 1].dropna().tolist() # B列
+    BUDGET_INCOME = dict(zip(conf_df.iloc[:, 0].dropna(), conf_df.iloc[:, 2].dropna())) # A列とC列
+    BUDGET_EXPENSE = dict(zip(conf_df.iloc[:, 1].dropna(), conf_df.iloc[:, 3].dropna())) # B列とD列
 except Exception as e:
-    st.error(f"Configシートの列名（収入科目など）が正しくありません。")
+    st.error(f"Configシートの項目（収入科目など）が正しく配置されていません。")
     st.stop()
 
 # 4. データの整形
@@ -65,13 +65,12 @@ with tab1:
         memo = st.text_input("備考")
         if st.form_submit_button("💾 保存する", use_container_width=True):
             if amount > 0:
-                # 新しい行を作成（列名をシートと完全に一致させる）
                 new_row = pd.DataFrame([[str(date), category_type, pay_method, item, amount, memo]], 
                                      columns=["日付", "区分", "方法", "科目", "金額", "備考"])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 
-                # 保存先を「Data」シートに固定
-                conn.update(worksheet="Data", data=updated_df)
+                # 番号(worksheet=1)で保存
+                conn.update(worksheet=1, data=updated_df)
                 
                 st.session_state.tmp_amount = 0
                 st.success("保存しました！")
@@ -113,7 +112,7 @@ with tab3:
         df['年月'] = df['日付'].dt.strftime('%Y-%m')
         month_list = sorted(df['年月'].unique(), reverse=True)
         if month_list:
-            sel_month = st.selectbox("集計月を選択", month_list)
+            sel_month = st.selectbox("集計月", month_list)
             m_df = df[df['年月'] == sel_month].copy()
             m_disp = m_df[["日付", "方法", "科目", "金額", "備考"]].sort_values("日付")
             m_disp["日付"] = m_disp["日付"].dt.strftime('%Y-%m-%d')
@@ -141,8 +140,6 @@ with tab5:
             c1, c2 = st.columns([4, 1])
             c1.write(f"{row['日付']} | {row['科目']} | {int(row['金額']):,}円")
             if c2.button("🗑", key=f"del_{i}"):
-                # 削除して「Data」シートを更新
                 updated_df = df.drop(i)
-                conn.update(worksheet="Data", data=updated_df)
+                conn.update(worksheet=1, data=updated_df)
                 st.rerun()
-

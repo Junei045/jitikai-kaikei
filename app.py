@@ -74,8 +74,11 @@ with tab1:
                 new_row = pd.DataFrame([[str(date), category_type, pay_method, item, amount, memo]], columns=["日付", "区分", "方法", "科目", "金額", "備考"])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 # 2枚目があればそこに、なければ1枚目に保存
-                ws_idx = 1 if not df.equals(conf_df) else 0
-                conn.update(worksheet=ws_idx, data=updated_df)
+                # 常に「Data」という名前のシート、または2番目のシートに書き込むよう指定
+try:
+    conn.update(worksheet="Data", data=updated_df)
+except:
+    conn.update(worksheet=1, data=updated_df)
                 st.session_state.tmp_amount = 0
                 st.success("保存しました！")
                 st.rerun()
@@ -148,3 +151,4 @@ with tab5:
                 ws_idx = 1 if not df.equals(conf_df) else 0
                 conn.update(worksheet=ws_idx, data=df)
                 st.rerun()
+

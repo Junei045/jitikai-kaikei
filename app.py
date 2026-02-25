@@ -6,14 +6,14 @@ from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_num(v):
-    """数値を安全に変換（カンマや円を除去）"""
+    """数値を安全に変換（文字が混じっていても0にする）"""
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
-        return 0.0
+        return 0
     try:
         s = str(v).replace(',', '').replace('円', '').replace(' ', '').replace('　', '')
-        return float(s)
+        return int(float(s))
     except:
-        return 0.0
+        return 0
 
 try:
     # データの読み込み
@@ -30,12 +30,17 @@ try:
     if all_df.shape[1] >= 12:
         df = all_df.iloc[:, 6:12].copy()
         df.columns = ["日付", "区分", "方法", "科目", "金額", "備考"]
-        # 見出しと空行を除外
+        
+        # 見出し「日付」という行が混じっていたら削除
         df = df[df["日付"].astype(str) != "日付"]
+        # 日付または金額が空の行を削除
         df = df.dropna(subset=["日付", "金額"], how="all")
         
-        # 【修正】日付がシリアル値（数字）になってしまう問題の対策
+        # 【重要】日付のズレ対策：一度日付型に変換し、エラーはNaT（欠損）にする
         df["日付"] = pd.to_datetime(df["日付"], errors='coerce')
+        # 日付に変換できなかった行（変な文字など）を捨てる
+        df = df.dropna(subset=["日付"])
+        
         # 金額を数値化
         df["金額"] = df["金額"].apply(clean_num)
         df["科目"] = df["科目"].astype(str).str.strip()
@@ -51,7 +56,7 @@ st.set_page_config(page_title=group_name, layout="centered")
 st.title(f"📊 {group_name}")
 st.caption("※データ入力・修正はスプレッドシートで行ってください。")
 
-# タブ表示（入力・削除を廃止し、集計に特化）
+# タブ表示
 tab1, tab2, tab3 = st.tabs(["📊 予算・残高", "📅 月次集計", "📄 決算報告書"])
 
 with tab1:
@@ -87,19 +92,20 @@ with tab1:
 with tab2:
     st.subheader("月次集計")
     if not df.empty:
+        # 年月でフィルタリング
         df['年月'] = df['日付'].dt.strftime('%Y-%m')
-        m_list = sorted(df['年月'].dropna().unique(), reverse=True)
+        m_list = sorted(df['年月'].unique(), reverse=True)
         if m_list:
             sel_m = st.selectbox("集計月を選択", m_list)
-            m_disp = df[df['年月'] == sel_m][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付")
+            m_disp = df[df['年月'] == sel_m][["日付", "方法", "科目", "金額", "備考"]].sort_values("日付").copy()
+            # 表示用に日付を整形
             m_disp["日付"] = m_disp["日付"].dt.strftime('%Y-%m-%d')
-            
-            # 【修正】行番号を1から開始させる
+            # 行番号を1から振る
             m_disp.index = range(1, len(m_disp) + 1)
-            
-            st.table(m_disp.style.format({"金額": "{:,.0f}"}))
+            # 安全にカンマ表示（数値列のみ指定）
+            st.table(m_disp.style.format({"金額": "{:,}"}))
         else:
-            st.info("データがありません。")
+            st.info("集計可能なデータがありません。")
 
 with tab3:
     st.subheader("決算報告書")
@@ -111,11 +117,13 @@ with tab3:
             data.append({"科目": k, "予算額": int(v), "決算額": int(a), "差異": int(a-v if cat=="収入" else v-a)})
         res_df = pd.DataFrame(data)
         if not res_df.empty:
-            # 【修正】行番号を1から開始させる
             res_df.index = range(1, len(res_df) + 1)
         return res_df
 
     st.write("#### 【収入の部】")
-    st.table(get_rep(BUDGET_INCOME, "収入").style.format("{:,}"))
+    rep_inc = get_rep(BUDGET_INCOME, "収入")
+    st.table(rep_inc.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+    
     st.write("#### 【支出の部】")
-    st.table(get_rep(BUDGET_EXPENSE, "支出").style.format("{:,}"))
+    rep_exp = get_rep(BUDGET_EXPENSE, "支出")
+    st.table(rep_exp.style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))

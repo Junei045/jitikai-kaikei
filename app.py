@@ -7,9 +7,9 @@ from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    # 1枚目をConfig、2枚目をDataという名前で直接指定して読み込む
-    conf_df = conn.read(worksheet="Config", ttl=0)
-    df = conn.read(worksheet="Data", ttl=0)
+    # 名前ではなく、左から1番目(0)、2番目(1)のシートを読み込む
+    conf_df = conn.read(worksheet=0, ttl=0)
+    df = conn.read(worksheet=1, ttl=0)
 
     # 団体名の取得
     if "団体名" in conf_df.columns:
@@ -145,3 +145,4 @@ with tab5:
                 updated_df = df.drop(i)
                 conn.update(worksheet="Data", data=updated_df)
                 st.rerun()
+

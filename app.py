@@ -27,37 +27,26 @@ try:
 
     # 実績データの抽出（G-N列：14列分確保）
     if all_df.shape[1] >= 14:
-        # G(6)からN(13)までを取得
+        # G(6)からN(13)まで取得
         df_raw = all_df.iloc[:, 6:14].copy()
-        cols = ["日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書URL"]
+        cols = ["日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
         df_raw.columns = cols[:len(df_raw.columns)]
         
-        # 不要な行の削除
         df_raw = df_raw[df_raw["日付"].astype(str) != "日付"]
         df_raw = df_raw.dropna(subset=["日付"])
-        
-        # 日付型に変換
         df_raw["日付"] = pd.to_datetime(df_raw["日付"], errors='coerce')
         df_raw = df_raw.dropna(subset=["日付"])
         
-        # 科目の合算
         def get_subject(row):
             inc = str(row.get("収入科目", "")).strip()
             exp = str(row.get("支出科目", "")).strip()
             if inc and inc != "nan" and inc != "None": return inc
             if exp and exp != "nan" and exp != "None": return exp
             return "未分類"
-        df_raw["科目"] = df_raw.apply(get_subject, axis=1)
 
-        # 【追加】領収書の有無を判定
-        def check_receipt(url):
-            u = str(url).strip()
-            if u and u != "nan" and u != "None" and u != "":
-                return "🔗 あり"
-            return "-"
-        df_raw["領収書"] = df_raw["領収書URL"].apply(check_receipt)
+        df_raw["科目"] = df_raw.apply(get_subject, axis=1)
         
-        # 最終的なデータフレーム
+        # 最終的なデータフレーム（領収書列を追加）
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考", "領収書"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
     else:
@@ -71,7 +60,6 @@ except Exception as e:
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(f"📊 {group_name}")
 
-# タブ表示
 tab1, tab2, tab3 = st.tabs(["📊 予算・残高", "📅 月次集計", "📄 決算報告書"])
 
 with tab1:
@@ -111,7 +99,7 @@ with tab2:
         m_list = sorted(df['年月'].unique(), reverse=True)
         if m_list:
             sel_m = st.selectbox("集計月を選択", m_list)
-            # 【変更】表示項目に「領収書」を追加
+            # 領収書列も含めて表示
             m_disp = df[df['年月'] == sel_m][["日付", "方法", "科目", "金額", "備考", "領収書"]].sort_values("日付").copy()
             m_disp["日付"] = m_disp["日付"].dt.strftime('%Y-%m-%d')
             m_disp.index = range(1, len(m_disp) + 1)
@@ -123,4 +111,16 @@ with tab3:
     st.subheader("決算報告書")
     def get_rep(b_dict, cat):
         data = []
-        actual_sum = df[df["区分"] == cat].groupby("
+        actual_sum = df[df["区分"] == cat].groupby("科目")["金額"].sum()
+        for k, v in b_dict.items():
+            a = actual_sum.get(str(k).strip(), 0)
+            data.append({"科目": k, "予算額": int(v), "決算額": int(a), "差異": int(a-v if cat=="収入" else v-a)})
+        res_df = pd.DataFrame(data)
+        if not res_df.empty:
+            res_df.index = range(1, len(res_df) + 1)
+        return res_df
+
+    st.write("#### 【収入の部】")
+    st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+    st.write("#### 【支出の部】")
+    st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))

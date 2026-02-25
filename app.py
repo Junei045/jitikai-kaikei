@@ -7,11 +7,10 @@ from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_num(v):
-    """どんな変な値も数値に変換する魔法の関数"""
+    """数値を安全に変換"""
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
         return 0.0
     try:
-        # 「円」や「,」を消して数値化
         s = str(v).replace(',', '').replace('円', '').replace(' ', '').replace('　', '')
         return float(s)
     except:
@@ -22,28 +21,23 @@ try:
     all_df = conn.read(worksheet=0, ttl=0)
     
     # 団体名取得
-    group_name = all_df.iloc[0, 4] if all_df.shape[1] >= 5 else "会計システム"
+    group_name = str(all_df.iloc[0, 4]) if all_df.shape[1] >= 5 else "会計システム"
     
     # 設定データの抽出
     INCOME_ITEMS = all_df.iloc[:, 0].dropna().astype(str).tolist()
     EXPENSE_ITEMS = all_df.iloc[:, 1].dropna().astype(str).tolist()
     
-    # 予算を数値に変換（エラー対策を強化）
-    BUDGET_INCOME = {}
-    for k, v in zip(all_df.iloc[:, 0], all_df.iloc[:, 2]):
-        if pd.notna(k) and str(k) != "nan":
-            BUDGET_INCOME[str(k).strip()] = clean_num(v)
-            
-    BUDGET_EXPENSE = {}
-    for k, v in zip(all_df.iloc[:, 1], all_df.iloc[:, 3]):
-        if pd.notna(k) and str(k) != "nan":
-            BUDGET_EXPENSE[str(k).strip()] = clean_num(v)
+    # 予算を数値に変換
+    BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 0], all_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
+    BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 1], all_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
-    # 実績データの抽出（G列〜L列）
+    # 実績データの抽出（G列〜L列：インデックス6〜11）
     if all_df.shape[1] >= 12:
         df = all_df.iloc[:, 6:12].copy()
         df.columns = ["日付", "区分", "方法", "科目", "金額", "備考"]
-        df = df[(df["日付"].astype(str) != "日付") & (df["日付"].astype(str) != "nan")]
+        # 見出しと空行を除外
+        df = df[df["日付"].astype(str) != "日付"]
+        df = df.dropna(subset=["日付", "金額"], how="all")
         df["金額"] = df["金額"].apply(clean_num)
         df["科目"] = df["科目"].astype(str).str.strip()
     else:
@@ -53,7 +47,7 @@ except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
-# 2. ページ設定とタイトル
+# 2. ページ設定
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(group_name)
 
@@ -84,11 +78,11 @@ with tab1:
         memo = st.text_input("備考")
         if st.form_submit_button("💾 保存する", use_container_width=True):
             if amount > 0:
-                new_row_list = [date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
-                # A-F列を空にして結合
-                new_line = [None]*6 + new_row_list
-                updated_all = pd.concat([all_df, pd.DataFrame([new_line], columns=all_df.columns)], ignore_index=True)
-                conn.update(worksheet=0, data=updated_all)
+                # 1行だけデータを作って追加保存（エラー回避策）
+                new_row = [None]*6 + [date_val.strftime('%Y-%m-%d'), category_type, pay_method, item, amount, memo]
+                # worksheet=0 の最後尾に追加
+                conn.create(worksheet=0, data=[new_row])
+                
                 st.session_state.tmp_amount = 0
                 st.success("保存しました！")
                 st.rerun()
@@ -149,13 +143,4 @@ with tab4:
 
 with tab5:
     st.subheader("データの取り消し")
-    if not df.empty:
-        for i in reversed(df.index):
-            row = df.loc[i]
-            col_txt, col_btn = st.columns([4, 1])
-            col_txt.write(f"{row['日付']} | {row['科目']} | {int(row['金額']):,}円")
-            if col_btn.button("削除", key=f"del_{i}"):
-                new_all_df = all_df.drop(i)
-                conn.update(worksheet=0, data=new_all_df)
-                st.success("削除しました")
-                st.rerun()
+    st.info("※データの削除はスプレッドシートから直接行ってください。")

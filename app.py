@@ -21,38 +21,38 @@ try:
     # 団体名取得
     group_name = str(all_df.iloc[0, 4]) if all_df.shape[1] >= 5 else "会計システム"
     
-    # 設定データの抽出（A列, B列の科目、C列, D列の予算）
+    # 設定データの抽出
     BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 0], all_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
     BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(all_df.iloc[:, 1], all_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
-    # 実績データの抽出（G-M列：インデックス6〜12）
-    if all_df.shape[1] >= 13:
-        # G(6):日付, H(7):区分, I(8):方法, J(9):収入科目, K(10):支出科目, L(11):金額, M(12):備考
+    # 実績データの抽出（G-M列：13列分確保）
+    if all_df.shape[1] >= 12:
+        # G列からM列までを確実に取得
         df_raw = all_df.iloc[:, 6:13].copy()
-        df_raw.columns = ["日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考"]
+        # 列名の一時的なセット（J:収入科目, K:支出科目, L:金額, M:備考）
+        # 列数が足りない場合に備えて動的に調整
+        cols = ["日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考"]
+        df_raw.columns = cols[:len(df_raw.columns)]
         
-        # 見出し行を除去
+        # 不要な行の削除
         df_raw = df_raw[df_raw["日付"].astype(str) != "日付"]
-        df_raw = df_raw.dropna(subset=["日付"], how="all")
+        df_raw = df_raw.dropna(subset=["日付"])
         
-        # 日付の正規化
+        # 日付型に変換
         df_raw["日付"] = pd.to_datetime(df_raw["日付"], errors='coerce')
         df_raw = df_raw.dropna(subset=["日付"])
         
-        # 【新機能】J列（収入科目）とK列（支出科目）を合算して「科目」列を作る
-        # 両方空なら "未分類"、入力がある方を採用する
-        def merge_subjects(row):
-            s_inc = str(row["収入科目"]).strip()
-            s_exp = str(row["支出科目"]).strip()
-            if s_inc != "" and s_inc != "nan" and s_inc != "None":
-                return s_inc
-            if s_exp != "" and s_exp != "nan" and s_exp != "None":
-                return s_exp
+        # 【修正】科目の合算ロジック：J列またはK列から文字を探す
+        def get_subject(row):
+            inc = str(row.get("収入科目", "")).strip()
+            exp = str(row.get("支出科目", "")).strip()
+            if inc and inc != "nan" and inc != "None": return inc
+            if exp and exp != "nan" and exp != "None": return exp
             return "未分類"
 
-        df_raw["科目"] = df_raw.apply(merge_subjects, axis=1)
+        df_raw["科目"] = df_raw.apply(get_subject, axis=1)
         
-        # 必要な列だけを整理して抽出
+        # 最終的なデータフレーム
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
     else:
@@ -65,13 +65,13 @@ except Exception as e:
 # ページ設定
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(f"📊 {group_name}")
-st.caption("※データ入力はスプレッドシートのG〜M列（J:収入科目, K:支出科目）で行ってください。")
 
 # タブ表示
 tab1, tab2, tab3 = st.tabs(["📊 予算・残高", "📅 月次集計", "📄 決算報告書"])
 
 with tab1:
     st.subheader("現在の資産状況")
+    # 残高計算
     c_in = df[(df["区分"] == "収入") & (df["方法"] == "現金")]["金額"].sum()
     c_out = df[(df["区分"] == "支出") & (df["方法"] == "現金")]["金額"].sum()
     b_in = df[(df["区分"] == "収入") & (df["方法"] == "銀行")]["金額"].sum()
@@ -112,7 +112,9 @@ with tab2:
             m_disp.index = range(1, len(m_disp) + 1)
             st.table(m_disp.style.format({"金額": "{:,}"}))
         else:
-            st.info("データがありません。")
+            st.info("集計可能なデータが見つかりません。")
+    else:
+        st.info("スプレッドシートに実績データがありません。")
 
 with tab3:
     st.subheader("決算報告書")

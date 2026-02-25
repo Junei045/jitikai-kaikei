@@ -7,47 +7,41 @@ from streamlit_gsheets import GSheetsConnection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    conf_df = conn.read(worksheet=0, ttl=0)
-    try:
-        df = conn.read(worksheet=1, ttl=0)
-    except:
-        df = conf_df.copy()
+    # 1枚目をConfig、2枚目をDataという名前で直接指定して読み込む
+    conf_df = conn.read(worksheet="Config", ttl=0)
+    df = conn.read(worksheet="Data", ttl=0)
 
     # 団体名の取得
     if "団体名" in conf_df.columns:
         group_name = str(conf_df["団体名"].iloc[0])
-    elif conf_df.shape[1] >= 5:
-        group_name = str(conf_df.iloc[0, 4])
     else:
-        group_name = "会計管理システム"
+        group_name = "自治会会計システム"
 
 except Exception as e:
-    group_name = "会計管理システム"
+    st.error(f"読み込みエラー: {e}")
+    st.info("スプレッドシートのタブ名が『Config』と『Data』になっているか確認してください。")
+    st.stop()
 
 # 2. ページ設定
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(group_name)
 
-# 3. リスト作成
+# 3. 予算・科目のリスト作成
 try:
     INCOME_ITEMS = conf_df["収入科目"].dropna().tolist()
     EXPENSE_ITEMS = conf_df["支出科目"].dropna().tolist()
     BUDGET_INCOME = dict(zip(conf_df["収入科目"].dropna(), conf_df["収入予算"].dropna()))
     BUDGET_EXPENSE = dict(zip(conf_df["支出科目"].dropna(), conf_df["支出予算"].dropna()))
 except Exception as e:
-    st.error(f"スプレッドシートの列名を確認してください: {e}")
+    st.error(f"Configシートの列名（収入科目など）が正しくありません。")
     st.stop()
 
 # 4. データの整形
-if df.empty or "日付" not in df.columns:
-    df = pd.DataFrame(columns=["日付", "区分", "方法", "科目", "金額", "備考"])
-else:
-    df["金額"] = pd.to_numeric(df["金額"], errors='coerce').fillna(0)
-
+df["金額"] = pd.to_numeric(df["金額"], errors='coerce').fillna(0)
 if "tmp_amount" not in st.session_state:
     st.session_state.tmp_amount = 0
 
-# --- 5. タブ表示（ここからが昨日足りなかった機能です） ---
+# --- 5. タブ表示 ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 入力", "📊 予算・残高", "📅 月次集計", "📄 決算報告書", "🗑 削除"])
 
 with tab1:
@@ -71,21 +65,21 @@ with tab1:
         memo = st.text_input("備考")
         if st.form_submit_button("💾 保存する", use_container_width=True):
             if amount > 0:
-                new_row = pd.DataFrame([[str(date), category_type, pay_method, item, amount, memo]], columns=["日付", "区分", "方法", "科目", "金額", "備考"])
+                # 新しい行を作成（列名をシートと完全に一致させる）
+                new_row = pd.DataFrame([[str(date), category_type, pay_method, item, amount, memo]], 
+                                     columns=["日付", "区分", "方法", "科目", "金額", "備考"])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
-                # 2枚目があればそこに、なければ1枚目に保存
-                # 常に「Data」という名前のシート、または2番目のシートに書き込むよう指定
-try:
-    conn.update(worksheet="Data", data=updated_df)
-except:
-    conn.update(worksheet=1, data=updated_df)
+                
+                # 保存先を「Data」シートに固定
+                conn.update(worksheet="Data", data=updated_df)
+                
                 st.session_state.tmp_amount = 0
                 st.success("保存しました！")
                 st.rerun()
 
 with tab2:
     st.subheader("現在の資産状況")
-    if not df.empty and "金額" in df.columns:
+    if not df.empty:
         c_in = df[(df["区分"] == "収入") & (df["方法"] == "現金")]["金額"].sum()
         c_out = df[(df["区分"] == "支出") & (df["方法"] == "現金")]["金額"].sum()
         b_in = df[(df["区分"] == "収入") & (df["方法"] == "銀行")]["金額"].sum()
@@ -114,7 +108,7 @@ with tab2:
 
 with tab3:
     st.subheader("月次集計")
-    if not df.empty and "日付" in df.columns:
+    if not df.empty:
         df["日付"] = pd.to_datetime(df["日付"])
         df['年月'] = df['日付'].dt.strftime('%Y-%m')
         month_list = sorted(df['年月'].unique(), reverse=True)
@@ -147,8 +141,7 @@ with tab5:
             c1, c2 = st.columns([4, 1])
             c1.write(f"{row['日付']} | {row['科目']} | {int(row['金額']):,}円")
             if c2.button("🗑", key=f"del_{i}"):
-                df = df.drop(i)
-                ws_idx = 1 if not df.equals(conf_df) else 0
-                conn.update(worksheet=ws_idx, data=df)
+                # 削除して「Data」シートを更新
+                updated_df = df.drop(i)
+                conn.update(worksheet="Data", data=updated_df)
                 st.rerun()
-

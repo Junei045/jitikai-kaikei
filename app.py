@@ -16,8 +16,8 @@ def clean_num(v):
 
 try:
     # --- 修正ポイント：シート名を安全に指定 ---
-    # 日本語の「フォームの回答 2」を直接指定。半角スペースに注意してください。
-    all_df = conn.read(worksheet="フォームの回答 2", ttl=0)
+    # 日本語の「フォームの回答1」を直接指定。半角スペースに注意してください。
+    all_df = conn.read(worksheet="フォームの回答1", ttl=0)
     
     # 団体名や予算設定（一番左のシート）を読み込む
     conf_df = conn.read(worksheet=0, ttl=0)
@@ -121,3 +121,4 @@ with tab3:
     st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
     st.write("#### 【支出の部】")
     st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+

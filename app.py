@@ -15,9 +15,8 @@ def clean_num(v):
         return 0
 
 try:
-    # --- 修正ポイント：シート名を安全に指定 ---
-    # 日本語の「フォームの回答1」を直接指定。半角スペースに注意してください。
-    all_df = conn.read(worksheet="フォームの回答1", ttl=0)
+    # --- 修正ポイント：シート名を英数字の "data" に変更 ---
+    all_df = conn.read(worksheet="data", ttl=0)
     
     # 団体名や予算設定（一番左のシート）を読み込む
     conf_df = conn.read(worksheet=0, ttl=0)
@@ -52,12 +51,12 @@ try:
 
 except Exception as e:
     st.error(f"読み込みエラー: {e}")
-    st.info("【確認事項】")
-    st.write("1. フォームからテスト送信を1件以上行いましたか？")
-    st.write("2. スプレッドシートのタブ名が『フォームの回答 1』(数字は半角)になっていますか？")
+    st.info("【最終チェック】")
+    st.write("1. スプレッドシートのタブ名が半角小文字の『data』になっていますか？")
+    st.write("2. フォームからテスト送信を1件以上行いましたか？")
     st.stop()
 
-# --- 表示設定 ---
+# --- 以降の表示設定は変更なし ---
 st.set_page_config(page_title=group_name, layout="centered")
 st.title(f"📊 {group_name}")
 
@@ -121,4 +120,3 @@ with tab3:
     st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
     st.write("#### 【支出の部】")
     st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
-

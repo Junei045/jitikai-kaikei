@@ -15,27 +15,27 @@ def clean_num(v):
         return 0
 
 try:
-    # シート名を "data" として読み込む
-    # ※worksheet=1 ではなく "data" と直接指定します
-    all_df = conn.read(worksheet="data", ttl=0)
+    # 修正：一番左のタブ（インデックス0）を実績データとして読み込む
+    all_df = conn.read(worksheet=0, ttl=0)
     
-    # 団体名や予算設定は一番左のシート（インデックス0）から取得
-    conf_df = conn.read(worksheet=0, ttl=0)
+    # 修正：左から二番目のタブ（インデックス1）を団体名や予算設定として読み込む
+    # ※もし「設定」シートが左から三番目ならここを 2 に変えてください
+    conf_df = conn.read(worksheet=1, ttl=0)
+    
     group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "会計システム"
     BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 0], conf_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
     BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 1], conf_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
-    # データ抽出
+    # データ抽出（列構成は前回の通り：タイムスタンプ, 日付, 区分, 方法, 収入科目, 支出科目, 金額, 備考, 領収書）
     if not all_df.empty:
         df_raw = all_df.copy()
-        # 列名の定義（フォームの並び：タイムスタンプ, 日付, 区分, 方法, 収入科目, 支出科目, 金額, 備考, 領収書）
         raw_cols = ["タイムスタンプ", "日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
+        # 実際に取得できた列数に合わせて調整
         df_raw.columns = raw_cols[:len(df_raw.columns)]
         
         df_raw["日付"] = pd.to_datetime(df_raw["日付"], errors='coerce')
         df_raw = df_raw.dropna(subset=["日付"])
         
-        # 科目の合算処理
         def get_subject(row):
             inc = str(row.get("収入科目", "")).strip()
             exp = str(row.get("支出科目", "")).strip()
@@ -44,7 +44,6 @@ try:
             return "未分類"
 
         df_raw["科目"] = df_raw.apply(get_subject, axis=1)
-        
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考", "領収書"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
     else:
@@ -52,9 +51,6 @@ try:
 
 except Exception as e:
     st.error(f"読み込みエラー: {e}")
-    st.info("【最終チェック】")
-    st.write("1. スプレッドシートのタブ名が半角小文字の『data』になっていますか？")
-    st.write("2. フォームからテスト送信を1件以上行いましたか？")
     st.stop()
 
 # --- 以降の表示設定は変更なし ---
@@ -121,4 +117,5 @@ with tab3:
     st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
     st.write("#### 【支出の部】")
     st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+
 

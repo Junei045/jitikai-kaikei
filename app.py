@@ -15,10 +15,11 @@ def clean_num(v):
         return 0
 
 try:
-    # --- 修正ポイント：シート名を英数字の "data" に変更 ---
+    # シート名を "data" として読み込む
+    # ※worksheet=1 ではなく "data" と直接指定します
     all_df = conn.read(worksheet="data", ttl=0)
     
-    # 団体名や予算設定（一番左のシート）を読み込む
+    # 団体名や予算設定は一番左のシート（インデックス0）から取得
     conf_df = conn.read(worksheet=0, ttl=0)
     group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "会計システム"
     BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 0], conf_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
@@ -120,3 +121,4 @@ with tab3:
     st.table(get_rep(BUDGET_INCOME, "収入").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
     st.write("#### 【支出の部】")
     st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
+

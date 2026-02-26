@@ -15,48 +15,46 @@ def clean_num(v):
         return 0
 
 try:
-    # 【重要】フォームの回答シートを読み込む
-    # シート名が「フォームの回答 1」であることを確認してください
-    all_df = conn.read(worksheet="フォーム의回答 1", ttl=0)
+    # --- 修正ポイント：シート名を安全に指定 ---
+    # 日本語の「フォームの回答 2」を直接指定。半角スペースに注意してください。
+    all_df = conn.read(worksheet="フォームの回答 2", ttl=0)
     
-    # 別途、設定（団体名や予算）が必要なため、一番左の「シート1」も読み込む
+    # 団体名や予算設定（一番左のシート）を読み込む
     conf_df = conn.read(worksheet=0, ttl=0)
     group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "会計システム"
     BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 0], conf_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
     BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 1], conf_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
-    # フォーム形式のデータ抽出
+    # データ抽出
     if not all_df.empty:
         df_raw = all_df.copy()
-        # 列名（A:タイムスタンプ, B:日付, C:区分, D:方法, E:収入科目, F:支出科目, G:金額, H:備考, I:領収書）
+        # 列名の定義（フォームの並び：タイムスタンプ, 日付, 区分, 方法, 収入科目, 支出科目, 金額, 備考, 領収書）
         raw_cols = ["タイムスタンプ", "日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
         df_raw.columns = raw_cols[:len(df_raw.columns)]
         
-        # 日付処理
         df_raw["日付"] = pd.to_datetime(df_raw["日付"], errors='coerce')
         df_raw = df_raw.dropna(subset=["日付"])
         
-        # 【合算】E列（収入科目）とF列（支出科目）を一つの「科目」列にまとめる
+        # 科目の合算処理
         def get_subject(row):
             inc = str(row.get("収入科目", "")).strip()
             exp = str(row.get("支出科目", "")).strip()
-            # 収入科目があれば採用、なければ支出科目を採用、両方なければ未分類
             if inc and inc != "nan" and inc != "None": return inc
             if exp and exp != "nan" and exp != "None": return exp
             return "未分類"
 
         df_raw["科目"] = df_raw.apply(get_subject, axis=1)
         
-        # アプリで表示・集計に使う列だけを抽出
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考", "領収書"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
     else:
-        # データが空の場合
         df = pd.DataFrame(columns=["日付", "区分", "方法", "科目", "金額", "備考", "領収書"])
 
 except Exception as e:
     st.error(f"読み込みエラー: {e}")
-    st.info("※フォームからのテスト入力が1件以上あるか、シート名が正しいか確認してください。")
+    st.info("【確認事項】")
+    st.write("1. フォームからテスト送信を1件以上行いましたか？")
+    st.write("2. スプレッドシートのタブ名が『フォームの回答 1』(数字は半角)になっていますか？")
     st.stop()
 
 # --- 表示設定 ---

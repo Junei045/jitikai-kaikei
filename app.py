@@ -5,8 +5,12 @@ from streamlit_gsheets import GSheetsConnection
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# --- 接続設定（Secretsの [connections.gsheets] を読み込む） ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- 修正：Secretsを見に行かず、URLを直接プログラムに教える ---
+conn = st.connection(
+    "gsheets", 
+    type=GSheetsConnection, 
+    url="https://docs.google.com/spreadsheets/d/1GGAWdo33zjrgdbwe5HBDaBNgc7UIr5s66iY_G7x15dg/edit"
+)
 
 def clean_num(v):
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
@@ -103,3 +107,4 @@ try:
 
 except Exception as e:
     st.error(f"詳細なエラー報告: {e}")
+

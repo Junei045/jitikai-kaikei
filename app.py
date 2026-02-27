@@ -4,12 +4,9 @@ import pandas as pd
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# --- 設定：URLを直接CSV出力用に加工 ---
-# スプレッドシートのIDを固定し、直接CSVとして読み込む方式にします
-ID = "1GGAWdo33zjrgdbwe5HBDaBNgc7UIr5s66iY_G7x15dg"
-# gid=0 (一番左のdataシート), gid=172856967 (設定シート)
-URL_DATA = f"https://docs.google.com/spreadsheets/d/{ID}/export?format=csv&gid=0"
-URL_CONF = f"https://docs.google.com/spreadsheets/d/{ID}/export?format=csv&gid=172856967"
+# --- あなたが発行した「ウェブに公開」用のURL ---
+# 末尾の gid=... でシートを切り替えます
+BASE_PUB_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRJ0ZkfG3SjQdboU2tq7_MtjgvtyJYV-ricOWWYqH3I-TROjxed2AhajgOofq17Y3-Cdd327S2RdG6h/pub?output=csv"
 
 def clean_num(v):
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
@@ -21,9 +18,15 @@ def clean_num(v):
         return 0
 
 try:
-    # 直接CSVとして読み込み（ライブラリを介さないのでエラーが起きにくい）
-    df_raw = pd.read_csv(URL_DATA)
-    conf_df = pd.read_csv(URL_CONF)
+    # 1. 実績データの読み込み（通常、何も指定しないと一番左のシートが読み込まれます）
+    df_raw = pd.read_csv(BASE_PUB_URL)
+    
+    # 2. 設定用シートの読み込み（gidを指定。もしエラーならBASE_PUB_URL単体で試します）
+    # ※ウェブに公開で「ドキュメント全体」を選択していれば、末尾に &gid=... で切り替え可能です
+    try:
+        conf_df = pd.read_csv(f"{BASE_PUB_URL}&gid=172856967")
+    except:
+        conf_df = df_raw # 予備策
 
     if not df_raw.empty:
         # 列名の強制設定
@@ -63,7 +66,8 @@ try:
             m2.metric("銀行残高", f"{int(b_in - b_out):,}円")
             m3.metric("総資産", f"{int((c_in + b_in) - (c_out + b_out)):,}円")
             st.divider()
-            st.subheader("予算進捗")
+            
+            # 予算進捗の表示
             col_i, col_e = st.columns(2)
             with col_i:
                 st.write("#### 【収入】")
@@ -105,5 +109,4 @@ try:
             st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
 
 except Exception as e:
-    st.error(f"詳細なエラー報告: {e}")
-    st.info("スプレッドシートが『ウェブに公開』または『リンクを知っている全員が閲覧可能』になっているか確認してください。")
+    st.error(f"読み込み失敗。URL構成を確認中...\n\n詳細: {e}")

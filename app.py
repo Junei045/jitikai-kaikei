@@ -5,8 +5,8 @@ from streamlit_gsheets import GSheetsConnection
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# --- 鍵の名前を my_database に変更して、古い設定を無視させる ---
-conn = st.connection("my_database", type=GSheetsConnection)
+# 鍵の名前を gsheets に固定します
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_num(v):
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
@@ -106,3 +106,4 @@ try:
 
 except Exception as e:
     st.error(f"詳細なエラー報告: {e}")
+

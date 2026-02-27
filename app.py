@@ -1,16 +1,15 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# --- 修正：Secretsを見に行かず、URLを直接プログラムに教える ---
-conn = st.connection(
-    "gsheets", 
-    type=GSheetsConnection, 
-    url="https://docs.google.com/spreadsheets/d/1GGAWdo33zjrgdbwe5HBDaBNgc7UIr5s66iY_G7x15dg/edit"
-)
+# --- 設定：URLを直接CSV出力用に加工 ---
+# スプレッドシートのIDを固定し、直接CSVとして読み込む方式にします
+ID = "1GGAWdo33zjrgdbwe5HBDaBNgc7UIr5s66iY_G7x15dg"
+# gid=0 (一番左のdataシート), gid=172856967 (設定シート)
+URL_DATA = f"https://docs.google.com/spreadsheets/d/{ID}/export?format=csv&gid=0"
+URL_CONF = f"https://docs.google.com/spreadsheets/d/{ID}/export?format=csv&gid=172856967"
 
 def clean_num(v):
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
@@ -22,13 +21,12 @@ def clean_num(v):
         return 0
 
 try:
-    # 1. データの読み込み（左から1番目: data, 2番目: シート1）
-    # ※SecretsのURLを自動で使用します
-    df_raw = conn.read(worksheet=0, ttl=0)
-    conf_df = conn.read(worksheet=1, ttl=0)
+    # 直接CSVとして読み込み（ライブラリを介さないのでエラーが起きにくい）
+    df_raw = pd.read_csv(URL_DATA)
+    conf_df = pd.read_csv(URL_CONF)
 
     if not df_raw.empty:
-        # 列名の設定
+        # 列名の強制設定
         raw_cols = ["タイムスタンプ", "日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
         df_raw.columns = raw_cols[:len(df_raw.columns)]
         
@@ -46,13 +44,14 @@ try:
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考", "領収書"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
         
+        # 設定情報
         group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "自治会会計"
         BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 0], conf_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
         BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 1], conf_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
         st.title(f"📊 {group_name}")
         tab1, tab2, tab3 = st.tabs(["📊 予算・残高", "📅 月次集計", "📄 決算報告書"])
-        
+
         with tab1:
             st.subheader("現在の資産状況")
             c_in = df[(df["区分"] == "収入") & (df["方法"] == "現金")]["金額"].sum()
@@ -86,7 +85,7 @@ try:
             df['年月'] = df['日付'].dt.strftime('%Y-%m')
             m_list = sorted(df['年月'].unique(), reverse=True)
             if m_list:
-                sel_m = st.selectbox("集計月を選択", m_list)
+                sel_m = st.selectbox("集計月", m_list)
                 m_disp = df[df['年月'] == sel_m][["日付", "方法", "科目", "金額", "備考", "領収書"]].sort_values("日付")
                 m_disp["日付"] = m_disp["日付"].dt.strftime('%Y-%m-%d')
                 st.table(m_disp.style.format({"金額": "{:,}"}))
@@ -107,4 +106,4 @@ try:
 
 except Exception as e:
     st.error(f"詳細なエラー報告: {e}")
-
+    st.info("スプレッドシートが『ウェブに公開』または『リンクを知っている全員が閲覧可能』になっているか確認してください。")

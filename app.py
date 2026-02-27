@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# --- 修正：Secretsを使わず、直接URLを指定する方式 ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- 設定：URLを直接指定（末尾を /export... に変換） ---
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1GGAWdo33zjrgdbwe5HBDaBNgc7UIr5s66iY_G7x15dg/export?format=csv"
 
 def clean_num(v):
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
@@ -18,12 +17,15 @@ def clean_num(v):
         return 0
 
 try:
-    # 1. データの読み込み
-    all_df = conn.read(worksheet=0, ttl=0)
-    conf_df = conn.read(worksheet=1, ttl=0)
+    # 直接CSVとして読み込む（gid=0 は通常一番左のシートを指します）
+    # ※もし「data」が一番左なら、このまま読み込めます
+    df_raw = pd.read_csv(f"{SHEET_URL}&gid=0")
+    
+    # 設定用シート（左から2番目）も読み込む（gid=172856967 を指定）
+    conf_df = pd.read_csv(f"{SHEET_URL}&gid=172856967")
 
-    if not all_df.empty and not conf_df.empty:
-        df_raw = all_df.copy()
+    if not df_raw.empty:
+        # 列名の設定
         raw_cols = ["タイムスタンプ", "日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
         df_raw.columns = raw_cols[:len(df_raw.columns)]
         
@@ -41,6 +43,7 @@ try:
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考", "領収書"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
         
+        # 設定情報（conf_df から取得）
         group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "自治会会計"
         BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 0], conf_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
         BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 1], conf_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
@@ -59,6 +62,7 @@ try:
             m1.metric("現金残高", f"{int(c_in - c_out):,}円")
             m2.metric("銀行残高", f"{int(b_in - b_out):,}円")
             m3.metric("総資産", f"{int((c_in + b_in) - (c_out + b_out)):,}円")
+            
             st.divider()
             st.subheader("予算進捗")
             col_i, col_e = st.columns(2)
@@ -101,11 +105,5 @@ try:
             st.write("#### 【支出の部】")
             st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
 
-    else:
-        st.warning("データが見つかりません。")
-
 except Exception as e:
-    st.error(f"詳細なエラー報告: {e}")
-
-
-
+    st.error(f"データの読み込みに失敗しました。スプレッドシートの『共有』設定が『リンクを知っている全員』になっているか確認してください。\n\nエラー詳細: {e}")

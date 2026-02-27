@@ -19,8 +19,8 @@ def clean_num(v):
 
 @st.cache_data(ttl=60)
 def load_data(gid):
-    # CSVエクスポート用URLを生成
-    url = f"{SHEET_BASE}/export?format=csv&gid={gid}"
+    # エクスポート用URLをより確実に生成（gidを直接末尾に付ける）
+    url = f"https://docs.google.com/spreadsheets/d/1GGAWdo33zjrgdbwe5HBDaBNgc7UIr5s66iY_G7x15dg/export?format=csv&gid={gid}"
     return pd.read_csv(url)
 
 try:
@@ -118,3 +118,4 @@ try:
 
 except Exception as e:
     st.error(f"読み込み失敗。スプレッドシートの『共有』が『リンクを知っている全員』になっているか再度ご確認ください。\n\nエラー詳細: {e}")
+

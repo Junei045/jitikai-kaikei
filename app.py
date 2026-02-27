@@ -5,7 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# 接続設定
+# --- 修正ポイント：接続名を secrets の [connections.gsheets] と一致させる ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def clean_num(v):
@@ -18,23 +18,21 @@ def clean_num(v):
         return 0
 
 try:
-    # 1. データの読み込み
+    # 1. データの読み込み（secretsに書いた public_gsheets_url を自動で参照します）
     # 左から1番目のタブ(data)
     all_df = conn.read(worksheet=0, ttl=0)
-    # 左から2番目のタブ(設定)
+    # 左 from 2番目のタブ(設定)
     conf_df = conn.read(worksheet=1, ttl=0)
 
+    # --- 以下、前回のロジックと同じ ---
     if not all_df.empty and not conf_df.empty:
-        # データ抽出
         df_raw = all_df.copy()
         raw_cols = ["タイムスタンプ", "日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
         df_raw.columns = raw_cols[:len(df_raw.columns)]
         
-        # 日付処理
         df_raw["日付"] = pd.to_datetime(df_raw["日付"], errors='coerce')
         df_raw = df_raw.dropna(subset=["日付"])
         
-        # 科目合算
         def get_subject(row):
             inc = str(row.get("収入科目", "")).strip()
             exp = str(row.get("支出科目", "")).strip()
@@ -46,14 +44,12 @@ try:
         df = df_raw[["日付", "区分", "方法", "科目", "金額", "備考", "領収書"]].copy()
         df["金額"] = df["金額"].apply(clean_num)
         
-        # 設定取得
         group_name = str(conf_df.iloc[0, 4]) if conf_df.shape[1] >= 5 else "自治会会計"
         BUDGET_INCOME = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 0], conf_df.iloc[:, 2]) if pd.notna(k) and str(k) != "nan"}
         BUDGET_EXPENSE = {str(k).strip(): clean_num(v) for k, v in zip(conf_df.iloc[:, 1], conf_df.iloc[:, 3]) if pd.notna(k) and str(k) != "nan"}
 
         st.title(f"📊 {group_name}")
         
-        # タブ表示
         tab1, tab2, tab3 = st.tabs(["📊 予算・残高", "📅 月次集計", "📄 決算報告書"])
         
         with tab1:

@@ -5,8 +5,8 @@ from streamlit_gsheets import GSheetsConnection
 # ページ設定
 st.set_page_config(page_title="自治会会計システム", layout="centered")
 
-# --- 修正ポイント：接続名を secrets の [connections.gsheets] と一致させる ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- 鍵の名前を my_database に変更して、古い設定を無視させる ---
+conn = st.connection("my_database", type=GSheetsConnection)
 
 def clean_num(v):
     if pd.isna(v) or str(v).lower() == "nan" or str(v).strip() == "":
@@ -18,13 +18,10 @@ def clean_num(v):
         return 0
 
 try:
-    # 1. データの読み込み（secretsに書いた public_gsheets_url を自動で参照します）
-    # 左から1番目のタブ(data)
+    # 1. データの読み込み
     all_df = conn.read(worksheet=0, ttl=0)
-    # 左 from 2番目のタブ(設定)
     conf_df = conn.read(worksheet=1, ttl=0)
 
-    # --- 以下、前回のロジックと同じ ---
     if not all_df.empty and not conf_df.empty:
         df_raw = all_df.copy()
         raw_cols = ["タイムスタンプ", "日付", "区分", "方法", "収入科目", "支出科目", "金額", "備考", "領収書"]
@@ -105,7 +102,7 @@ try:
             st.table(get_rep(BUDGET_EXPENSE, "支出").style.format({"予算額": "{:,}", "決算額": "{:,}", "差異": "{:,}"}))
 
     else:
-        st.warning("スプレッドシートのデータが空、または読み込みに失敗しました。")
+        st.warning("データが見つかりません。")
 
 except Exception as e:
     st.error(f"詳細なエラー報告: {e}")
